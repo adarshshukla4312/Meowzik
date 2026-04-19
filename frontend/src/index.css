@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* Define Meamie's Custom Design System */
+@theme {
+  --color-meamie-bg: #09090b;      /* Zinc 950 */
+  --color-meamie-surface: #18181b; /* Zinc 900 */
+  --color-meamie-accent: #8b5cf6;  /* Violet 500 */
+  --color-meamie-accent-hover: #7c3aed; /* Violet 600 */
+  --color-meamie-text: #f4f4f5;    /* Zinc 100 */
+  --color-meamie-muted: #a1a1aa;   /* Zinc 400 */
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-meamie-bg);
+    color: var(--color-meamie-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom scrollbar for webkit */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-meamie-surface);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-meamie-muted);
+}

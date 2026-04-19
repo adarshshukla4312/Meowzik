@@ -1,0 +1,35 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "meamie-worker",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-04-01",
+	"observability": {
+		"enabled": true
+	},
+
+	// Durable Object bindings — SQLite backend for Free Tier
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "ROOM_ENGINE",
+				"class_name": "RoomEngine"
+			}
+		]
+	},
+
+	// Migration to register the DO with SQLite storage (required for Free Tier)
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["RoomEngine"]
+		}
+	],
+
+	// KV namespace for caching healthy Piped instances
+	"kv_namespaces": [
+		{
+			"binding": "PIPED_CACHE",
+			"id": "85d6d71e6ba845c1a1040f2a9481a182"
+		}
+	]
+}
