@@ -1,20 +1,23 @@
 @import "tailwindcss";
 
-/* Define Meamie's Custom Design System */
+/* Define Meamie's Custom Design System (Uber-inspired) */
 @theme {
-  --color-meamie-bg: #09090b;      /* Zinc 950 */
-  --color-meamie-surface: #18181b; /* Zinc 900 */
-  --color-meamie-accent: #8b5cf6;  /* Violet 500 */
-  --color-meamie-accent-hover: #7c3aed; /* Violet 600 */
-  --color-meamie-text: #f4f4f5;    /* Zinc 100 */
-  --color-meamie-muted: #a1a1aa;   /* Zinc 400 */
-  --font-sans: "Inter", system-ui, sans-serif;
+  --color-meowzik-bg: #ffffff;      /* Canvas */
+  --color-meowzik-surface: #efefef; /* Canvas Soft */
+  --color-meowzik-surface-dark: #f3f3f3; /* Canvas Softer */
+  --color-meowzik-accent: #000000;  /* Primary/Ink */
+  --color-meowzik-accent-hover: #282828; /* Black Elevated */
+  --color-meowzik-text: #000000;    /* Ink */
+  --color-meowzik-text-inverse: #ffffff; /* On Dark */
+  --color-meowzik-muted: #5e5e5e;   /* Body */
+  --font-sans: "Inter", system-ui, Helvetica Neue, Arial, sans-serif;
+  --font-display: "Inter", system-ui, Helvetica Neue, Arial, sans-serif;
 }
 
 @layer base {
   body {
-    background-color: var(--color-meamie-bg);
-    color: var(--color-meamie-text);
+    background-color: var(--color-meowzik-bg);
+    color: var(--color-meowzik-text);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -30,9 +33,49 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-meamie-surface);
+  background: var(--color-meowzik-surface);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-meamie-muted);
+  background: var(--color-meowzik-muted);
+}
+
+/* Custom Slider */
+.slider-progress {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.slider-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-meowzik-accent);
+  cursor: pointer;
+  box-shadow: 0 0 0 3px var(--color-meowzik-bg);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.slider-progress::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 2px var(--color-meowzik-bg);
+}
+
+.slider-progress::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-meowzik-accent);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 0 3px var(--color-meowzik-bg);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.slider-progress::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 2px var(--color-meowzik-bg);
 }

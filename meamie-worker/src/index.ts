@@ -91,7 +91,7 @@ export default {
 
 		// WebSocket upgrade → Durable Object
 		if (path.startsWith("/api/ws/") && request.headers.get("Upgrade") === "websocket") {
-			const roomCode = path.split("/api/ws/")[1]?.toUpperCase();
+			const roomCode = path.split("/api/ws/")[1]?.split("?")[0]?.toUpperCase();
 			if (!roomCode || roomCode.length !== 6) {
 				return new Response("Invalid room code", { status: 400 });
 			}

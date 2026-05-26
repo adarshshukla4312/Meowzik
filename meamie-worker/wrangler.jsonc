@@ -1,6 +1,7 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "meamie-worker",
+	"name": "meowzik-worker",
+	"account_id": "b1642369f90c8fdcc27306e3db192ed3",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-04-01",
 	"observability": {
@@ -29,7 +30,7 @@
 	"kv_namespaces": [
 		{
 			"binding": "PIPED_CACHE",
-			"id": "85d6d71e6ba845c1a1040f2a9481a182"
+			"id": "517d239fa2974438b71f3ded3f45a618"
 		}
 	]
 }
