@@ -1,7 +1,6 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "meowzik-worker",
-	"account_id": "b1642369f90c8fdcc27306e3db192ed3",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-04-01",
 	"observability": {

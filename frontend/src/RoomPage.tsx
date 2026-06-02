@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import { useRoomStore, getClockOffset } from "./store";
-import { Play, Pause, SkipForward, SkipBack, Users, Search, Plus, Trash2, Music, Share, X, ListMusic, Shield, ArrowRight, AlertTriangle, RefreshCw, CheckCircle, XCircle, Info } from "lucide-react";
+import { Play, Pause, SkipForward, SkipBack, Users, Search, Plus, Trash2, Music, Share, X, ListMusic, Shield, ArrowRight, RefreshCw, CheckCircle, XCircle, Info } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
 import { useAudioEngine } from "./useAudioEngine";
