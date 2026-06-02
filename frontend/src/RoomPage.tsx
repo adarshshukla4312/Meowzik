@@ -237,9 +237,9 @@ export default function RoomPage() {
           <div className="bg-red-50 border border-red-200 text-red-900 px-3 py-2 rounded-[12px] shadow-sm flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-red-500"></div>
-              <span className="text-[13px] font-semibold">Audio Server Offline</span>
+              <span className="text-[13px] font-semibold">Native Audio Offline</span>
             </div>
-            <span className="text-[11px] opacity-80 pl-[18px]">Playback unavailable</span>
+            <span className="text-[11px] opacity-80 pl-[18px]">Using standard player</span>
           </div>
         )}
       </div>

@@ -9,12 +9,13 @@ const PIPED_INSTANCES_URL =
 // These are tried FIRST before the community list
 const FALLBACK_INSTANCES = [
 	"api.piped.private.coffee",
-	"piapi.ggtyler.dev",
-	"pipedapi.in.projectsegfau.lt",
 ];
 
 // Timeout for individual Piped API calls (ms)
 const PIPED_FETCH_TIMEOUT = 8_000;
+const SEARCH_FETCH_TIMEOUT = 2_000;
+const SEARCH_FILTERS = ["videos", ""];
+const INVIDIOUS_FALLBACK_INSTANCES = ["inv.thepixora.com"];
 
 // ─── Fetch with Timeout ─────────────────────────────────────────────
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = PIPED_FETCH_TIMEOUT): Promise<Response> {
@@ -84,29 +85,129 @@ export async function handleSearch(
 		return Response.json({ error: "Missing query parameter" }, { status: 400 });
 	}
 
-	const instances = await getHealthyInstances(env);
+	const invidiousItems = await searchInvidious(query);
+	if (invidiousItems.length > 0) {
+		return Response.json({ items: invidiousItems }, {
+			headers: { "Access-Control-Allow-Origin": "*" },
+		});
+	}
+
+	const instances = (await getHealthyInstances(env)).slice(0, 2);
+	let lastEmptyData: unknown = null;
 
 	for (const instance of instances) {
-		try {
-			const res = await fetchWithTimeout(
-				`https://${instance}/search?q=${encodeURIComponent(query)}&filter=music_songs`,
-				{ headers: { Accept: "application/json" } }
-			);
+		for (const filter of SEARCH_FILTERS) {
+			try {
+				const params = new URLSearchParams({ q: query });
+				if (filter) params.set("filter", filter);
 
-			if (!res.ok) continue;
+				const res = await fetchWithTimeout(
+					`https://${instance}/search?${params.toString()}`,
+					{ headers: { Accept: "application/json" } },
+					SEARCH_FETCH_TIMEOUT
+				);
 
-			const data = await res.json();
-			return Response.json(data, {
-				headers: { "Access-Control-Allow-Origin": "*" },
-			});
-		} catch {
-			console.warn(`Piped instance ${instance} failed for search, rotating...`);
+				if (!res.ok) continue;
+
+				const data = await res.json();
+				const items = normalizeSearchItems(data);
+
+				if (items.length > 0) {
+					const responseData = Array.isArray(data)
+						? { items }
+						: { ...(data as Record<string, unknown>), items };
+
+					return Response.json(responseData, {
+						headers: { "Access-Control-Allow-Origin": "*" },
+					});
+				}
+
+				lastEmptyData = data;
+			} catch {
+				console.warn(`Piped instance ${instance} failed for search, rotating...`);
+			}
 		}
+	}
+
+	if (lastEmptyData) {
+		return Response.json(lastEmptyData, {
+			headers: { "Access-Control-Allow-Origin": "*" },
+		});
 	}
 
 	return Response.json(
 		{ error: "All Piped instances failed" },
 		{ status: 502, headers: { "Access-Control-Allow-Origin": "*" } }
+	);
+}
+
+async function searchInvidious(query: string): Promise<any[]> {
+	for (const instance of INVIDIOUS_FALLBACK_INSTANCES) {
+		try {
+			const params = new URLSearchParams({ q: query, type: "video" });
+			const res = await fetchWithTimeout(
+				`https://${instance}/api/v1/search?${params.toString()}`,
+				{ headers: { Accept: "application/json" } },
+				SEARCH_FETCH_TIMEOUT
+			);
+
+			if (!res.ok) continue;
+
+			const data = await res.json();
+			if (!Array.isArray(data)) continue;
+
+			const items = data
+				.filter((item: any) => {
+					return (
+						item?.type === "video" &&
+						typeof item.videoId === "string" &&
+						item.videoId.length === 11 &&
+						!item.liveNow
+					);
+				})
+				.map((item: any) => ({
+					url: `/watch?v=${item.videoId}`,
+					title: item.title,
+					uploaderName: item.author,
+					duration: item.lengthSeconds || 0,
+					thumbnail: `https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg`,
+				}));
+
+			if (items.length > 0) return items;
+		} catch {
+			console.warn(`Invidious instance ${instance} failed for search, rotating...`);
+		}
+	}
+
+	return [];
+}
+
+function normalizeSearchItems(data: unknown): any[] {
+	if (Array.isArray(data)) {
+		return data.filter(isPlayableSearchItem);
+	}
+
+	if (!data || typeof data !== "object") {
+		return [];
+	}
+
+	const maybeItems = (data as { items?: unknown }).items;
+	if (!Array.isArray(maybeItems)) {
+		return [];
+	}
+
+	return maybeItems.filter(isPlayableSearchItem);
+}
+
+function isPlayableSearchItem(item: unknown): boolean {
+	if (!item || typeof item !== "object") return false;
+
+	const value = item as Record<string, unknown>;
+	const url = typeof value.url === "string" ? value.url : "";
+	const type = typeof value.type === "string" ? value.type.toLowerCase() : "";
+
+	return (
+		(Boolean(value.title) && (url.includes("watch?v=") || type === "stream" || type === "video" || type === "music"))
 	);
 }
 
