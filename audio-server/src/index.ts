@@ -29,6 +29,7 @@ app.get("/stream/:videoId", async (req, res) => {
 
   try {
     // 1. Get info using youtube-dl-exec (uses yt-dlp binary under the hood)
+    // @ts-ignore - youtube-dl-exec types conflict with NodeNext resolution
     const output = await youtubedl(`https://www.youtube.com/watch?v=${videoId}`, {
       dumpSingleJson: true,
       noCheckCertificates: true,
