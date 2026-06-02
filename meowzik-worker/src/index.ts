@@ -13,7 +13,7 @@
  * The RoomEngine Durable Object is re-exported from room-engine.ts
  */
 
-import { handleSearch, handleStream, handleAudioProxy, refreshPipedInstances } from "./piped-rotator";
+import { handleSearch, refreshPipedInstances } from "./piped-rotator";
 
 // Re-export the Durable Object class so Wrangler can find it
 export { RoomEngine } from "./room-engine";
@@ -70,17 +70,7 @@ export default {
 			return handleSearch(query, env);
 		}
 
-		// Extract stream metadata from Piped
-		if (path.startsWith("/api/stream/") && request.method === "GET") {
-			const videoId = path.split("/api/stream/")[1];
-			return handleStream(videoId, env);
-		}
 
-		// Audio proxy — streams audio bytes through worker with CORS
-		if (path.startsWith("/api/audio/") && request.method === "GET") {
-			const videoId = path.split("/api/audio/")[1];
-			return handleAudioProxy(videoId, request, env);
-		}
 
 		// Create a new room
 		if (path === "/api/room" && request.method === "POST") {
