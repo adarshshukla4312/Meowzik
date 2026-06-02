@@ -5,17 +5,33 @@
 const PIPED_INSTANCES_URL =
 	"https://piped-instances.kavin.rocks/";
 
-// Fallback instances if the community list fetch fails
+// Verified working fallback instances (updated 2025-05-27)
+// These are tried FIRST before the community list
 const FALLBACK_INSTANCES = [
 	"api.piped.private.coffee",
-	"pipedapi.kavin.rocks",
-	"pipedapi.adminforge.de",
+	"piapi.ggtyler.dev",
+	"pipedapi.in.projectsegfau.lt",
 ];
+
+// Timeout for individual Piped API calls (ms)
+const PIPED_FETCH_TIMEOUT = 8_000;
+
+// ─── Fetch with Timeout ─────────────────────────────────────────────
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = PIPED_FETCH_TIMEOUT): Promise<Response> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	try {
+		const res = await fetch(url, { ...options, signal: controller.signal });
+		return res;
+	} finally {
+		clearTimeout(timer);
+	}
+}
 
 // ─── Instance Health Cache ──────────────────────────────────────────
 export async function refreshPipedInstances(env: Env): Promise<string[]> {
 	try {
-		const res = await fetch(PIPED_INSTANCES_URL);
+		const res = await fetchWithTimeout(PIPED_INSTANCES_URL, {}, 5000);
 		if (!res.ok) throw new Error(`Failed to fetch instances: ${res.status}`);
 
 		const instances: Array<{ api_url: string }> = await res.json();
@@ -34,12 +50,16 @@ export async function refreshPipedInstances(env: Env): Promise<string[]> {
 
 		if (apiHosts.length === 0) return FALLBACK_INSTANCES;
 
-		// Cache the healthy list in KV for 1 hour
-		await env.PIPED_CACHE.put("healthy_instances", JSON.stringify(apiHosts), {
+		// Prepend our known-good fallback instances at the front
+		// so they're always tried first
+		const combined = [...FALLBACK_INSTANCES, ...apiHosts.filter(h => !FALLBACK_INSTANCES.includes(h))];
+
+		// Cache the combined list in KV for 1 hour
+		await env.PIPED_CACHE.put("healthy_instances", JSON.stringify(combined), {
 			expirationTtl: 3600,
 		});
 
-		return apiHosts;
+		return combined;
 	} catch {
 		return FALLBACK_INSTANCES;
 	}
@@ -52,6 +72,8 @@ async function getHealthyInstances(env: Env): Promise<string[]> {
 	}
 	return refreshPipedInstances(env);
 }
+
+
 
 // ─── Search Proxy ───────────────────────────────────────────────────
 export async function handleSearch(
@@ -66,7 +88,7 @@ export async function handleSearch(
 
 	for (const instance of instances) {
 		try {
-			const res = await fetch(
+			const res = await fetchWithTimeout(
 				`https://${instance}/search?q=${encodeURIComponent(query)}&filter=music_songs`,
 				{ headers: { Accept: "application/json" } }
 			);
@@ -88,57 +110,13 @@ export async function handleSearch(
 	);
 }
 
-// ─── Stream Extraction ──────────────────────────────────────────────
-export async function handleStream(
-	videoId: string,
-	env: Env
-): Promise<Response> {
-	if (!videoId || videoId.trim().length === 0) {
-		return Response.json({ error: "Missing videoId" }, { status: 400 });
-	}
 
-	const instances = await getHealthyInstances(env);
 
-	for (const instance of instances) {
-		try {
-			const res = await fetch(`https://${instance}/streams/${videoId}`, {
-				headers: { Accept: "application/json" },
-			});
-
-			if (!res.ok) continue;
-
-			const data: any = await res.json();
-
-			// Find the best audio-only stream (prefer M4A for broad compatibility)
-			const audioStreams = data.audioStreams || [];
-			const bestAudio =
-				audioStreams.find(
-					(s: any) => s.mimeType?.includes("audio/mp4") || s.format === "M4A"
-				) || audioStreams[0];
-
-			if (!bestAudio) continue;
-
-			return Response.json(
-				{
-					url: bestAudio.url,
-					mimeType: bestAudio.mimeType,
-					quality: bestAudio.quality,
-					bitrate: bestAudio.bitrate,
-					title: data.title,
-					uploader: data.uploader,
-					uploaderUrl: data.uploaderUrl,
-					thumbnailUrl: data.thumbnailUrl,
-					duration: data.duration,
-				},
-				{ headers: { "Access-Control-Allow-Origin": "*" } }
-			);
-		} catch {
-			console.warn(`Piped instance ${instance} failed for stream, rotating...`);
-		}
-	}
-
-	return Response.json(
-		{ error: "All Piped instances failed to extract stream" },
-		{ status: 502, headers: { "Access-Control-Allow-Origin": "*" } }
-	);
+// ─── CORS Helper (local) ────────────────────────────────────────────
+function corsHeaders(): Record<string, string> {
+	return {
+		"Access-Control-Allow-Origin": "*",
+		"Access-Control-Allow-Methods": "GET, OPTIONS",
+		"Access-Control-Allow-Headers": "Range",
+	};
 }

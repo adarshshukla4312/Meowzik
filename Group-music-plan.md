@@ -1,4 +1,4 @@
-# Meamie: Synchronized Music Room - Project Plan
+# Meowzik: Synchronized Music Room - Project Plan
 
 ## 1. Project Overview
 

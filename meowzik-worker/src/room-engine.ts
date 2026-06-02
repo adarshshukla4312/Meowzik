@@ -40,7 +40,9 @@ type ClientMessage =
 	| { type: "SKIP_PREV" }
 	| { type: "SET_TRACK"; trackId: string }
 	| { type: "TOGGLE_AUTOPLAY"; enabled: boolean }
-	| { type: "STATUS_UPDATE"; status: "active" | "inactive" };
+	| { type: "STATUS_UPDATE"; status: "active" | "inactive" }
+	| { type: "HEARTBEAT" }
+	| { type: "QUEUE_CLEAR" };
 
 type ServerMessage =
 	| { type: "SYNC_INIT"; playback: PlaybackState; queue: TrackData[]; members: Member[]; myRole: "host" | "guest"; serverTime: number }
@@ -50,7 +52,9 @@ type ServerMessage =
 	| { type: "QUEUE_UPDATE"; queue: TrackData[] }
 	| { type: "TRACK_CHANGE"; playback: PlaybackState; queue: TrackData[] }
 	| { type: "AUTOPLAY_UPDATE"; playback: PlaybackState }
-	| { type: "MEMBERS_UPDATE"; members: Member[] };
+	| { type: "MEMBERS_UPDATE"; members: Member[] }
+	| { type: "QUEUE_ADD_SUCCESS"; trackTitle: string }
+	| { type: "QUEUE_DUPLICATE"; trackTitle: string };
 
 export class RoomEngine extends DurableObject {
 	private playback: PlaybackState;
@@ -114,6 +118,8 @@ export class RoomEngine extends DurableObject {
 		const [client, server] = Object.values(pair);
 
 		this.ctx.acceptWebSocket(server);
+
+		// Cancel any room cleanup alarm since someone is joining
 		this.ctx.storage.deleteAlarm();
 
 		let role: "host" | "guest" = "guest";
@@ -135,7 +141,7 @@ export class RoomEngine extends DurableObject {
 		}
 
 		// Attach state to the WebSocket
-		server.serializeAttachment({ userId, role, status: "active" });
+		server.serializeAttachment({ userId, role, status: "active", lastSeen: Date.now() });
 
 		try {
 			const initMessage: ServerMessage = {
@@ -153,6 +159,9 @@ export class RoomEngine extends DurableObject {
 			console.error("Failed to send init message", e);
 		}
 
+		// Arm heartbeat alarm if not already running
+		this.armHeartbeatAlarm();
+
 		return new Response(null, { status: 101, webSocket: client });
 	}
 
@@ -163,11 +172,18 @@ export class RoomEngine extends DurableObject {
 		const userId = att?.userId;
 		if (!userId) return;
 
+		// Update lastSeen on every message for heartbeat tracking
+		ws.serializeAttachment({ ...att, lastSeen: Date.now() });
+
 		try {
 			const event: ClientMessage = JSON.parse(message);
 			const isHost = att.role === "host";
 
 			switch (event.type) {
+				case "HEARTBEAT":
+					// lastSeen already updated above, nothing else to do
+					break;
+
 				case "PLAY":
 					this.playback.isPlaying = true;
 					this.playback.startTimestamp = Date.now();
@@ -188,13 +204,30 @@ export class RoomEngine extends DurableObject {
 					if (this.playback.isPlaying) {
 						this.playback.startTimestamp = Date.now();
 					}
-					// Don't persistState on SEEK — too frequent during slider drag
+					this.persistState();
 					this.broadcast({ type: "SEEK", playback: this.playback, serverTime: Date.now() });
 					break;
 
 				case "QUEUE_ADD":
 					if (!isHost && !this.settings.allowGuestQueue) return;
+					
+					// Check for duplicate — only block if song is currently in queue
+					if (this.queue.some(t => t.id === event.track.id)) {
+						ws.send(JSON.stringify({ 
+							type: "QUEUE_DUPLICATE", 
+							trackTitle: event.track.title 
+						}));
+						return;
+					}
+
 					this.queue.push(event.track);
+
+					// Notify the sender of success
+					ws.send(JSON.stringify({
+						type: "QUEUE_ADD_SUCCESS",
+						trackTitle: event.track.title,
+					}));
+
 					if (!this.playback.currentTrackId && this.queue.length === 1) {
 						this.playback.currentTrackId = event.track.id;
 						this.playback.isPlaying = false;
@@ -206,6 +239,21 @@ export class RoomEngine extends DurableObject {
 						this.persistState();
 						this.broadcast({ type: "QUEUE_UPDATE", queue: this.queue });
 					}
+					break;
+
+				case "QUEUE_CLEAR":
+					if (!isHost && !this.settings.allowGuestQueue) return;
+					
+					if (this.playback.currentTrackId) {
+						// Keep only the currently playing track
+						const currentTrack = this.queue.find(t => t.id === this.playback.currentTrackId);
+						this.queue = currentTrack ? [currentTrack] : [];
+					} else {
+						this.queue = [];
+					}
+					
+					this.persistState();
+					this.broadcast({ type: "QUEUE_UPDATE", queue: this.queue });
 					break;
 
 				case "QUEUE_REMOVE":
@@ -255,7 +303,7 @@ export class RoomEngine extends DurableObject {
 					break;
 
 				case "STATUS_UPDATE":
-					ws.serializeAttachment({ ...att, status: event.status });
+					ws.serializeAttachment({ ...att, status: event.status, lastSeen: Date.now() });
 					this.broadcastMembersUpdate();
 					break;
 			}
@@ -265,6 +313,7 @@ export class RoomEngine extends DurableObject {
 	}
 
 	async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> {
+		// Broadcast updated member list immediately
 		this.broadcastMembersUpdate();
 		
 		const activeConnections = this.ctx.getWebSockets().length;
@@ -274,16 +323,59 @@ export class RoomEngine extends DurableObject {
 				this.playback.trackOffset += (Date.now() - this.playback.startTimestamp) / 1000;
 				this.persistState();
 			}
+			// Schedule room cleanup after 24 hours of inactivity
 			this.ctx.storage.setAlarm(Date.now() + 24 * 60 * 60 * 1000);
+		} else {
+			// Re-arm heartbeat alarm for remaining connections
+			this.armHeartbeatAlarm();
 		}
 	}
 
 	async alarm(): Promise<void> {
-		await this.ctx.storage.deleteAll();
+		const sockets = this.ctx.getWebSockets();
+		
+		// If no connections remain, clean up the room
+		if (sockets.length === 0) {
+			await this.ctx.storage.deleteAll();
+			return;
+		}
+
+		// Heartbeat check: close stale connections
+		const now = Date.now();
+		let closedAny = false;
+		for (const ws of sockets) {
+			const att = ws.deserializeAttachment();
+			if (att?.lastSeen && now - att.lastSeen > 60_000) {
+				try {
+					ws.close(4000, "Heartbeat timeout");
+					closedAny = true;
+				} catch {
+					// Socket may already be closed
+				}
+			}
+		}
+
+		if (closedAny) {
+			this.broadcastMembersUpdate();
+		}
+
+		// Re-arm heartbeat alarm if there are still active connections
+		const remaining = this.ctx.getWebSockets().length;
+		if (remaining > 0) {
+			this.armHeartbeatAlarm();
+		} else {
+			// Schedule room cleanup
+			this.ctx.storage.setAlarm(Date.now() + 24 * 60 * 60 * 1000);
+		}
 	}
 
 	async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
 		console.error("WebSocket error:", error);
+	}
+
+	private armHeartbeatAlarm(): void {
+		// Check heartbeats every 30 seconds
+		this.ctx.storage.setAlarm(Date.now() + 30_000);
 	}
 
 	private advanceQueue(): void {
@@ -323,7 +415,7 @@ export class RoomEngine extends DurableObject {
 			this.playback.trackOffset = 0;
 			this.playback.startTimestamp = this.playback.isPlaying ? Date.now() : 0;
 			this.persistState();
-			this.broadcast({ type: "SEEK", playback: this.playback });
+			this.broadcast({ type: "SEEK", playback: this.playback, serverTime: Date.now() });
 			return;
 		}
 

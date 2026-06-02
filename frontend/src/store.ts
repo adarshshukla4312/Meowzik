@@ -26,6 +26,13 @@ export interface Member {
   status: "active" | "inactive";
 }
 
+// ─── Toast System ──────────────────────────────────────────────────
+export interface Toast {
+  id: string;
+  message: string;
+  type: "success" | "error" | "warning";
+}
+
 interface RoomStore {
   // Sync Data
   roomCode: string | null;
@@ -40,9 +47,20 @@ interface RoomStore {
   ws: WebSocket | null;
   isConnected: boolean;
   reconnectAttempts: number;
+  audioServerStatus: "checking" | "online" | "offline";
+
+  // Toasts
+  toasts: Toast[];
+  addToast: (message: string, type?: Toast["type"]) => void;
+  removeToast: (id: string) => void;
+
+  // Version check
+  updateAvailable: boolean;
+  setUpdateAvailable: (available: boolean) => void;
 
   // Actions
   setRoomCode: (code: string) => void;
+  setAudioServerStatus: (status: "checking" | "online" | "offline") => void;
   connect: (code: string) => void;
   disconnect: () => void;
   sendAction: (action: unknown) => void;
@@ -61,7 +79,29 @@ const getUserId = () => {
 };
 
 let reconnectTimeout: any = null;
+let heartbeatInterval: any = null;
 let visibilityHandler: any = null;
+
+// ─── Version Check ─────────────────────────────────────────────────
+const CURRENT_VERSION = localStorage.getItem("meowzik_version") || "";
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8788";
+
+async function checkForUpdates(store: { setUpdateAvailable: (v: boolean) => void }) {
+  try {
+    const res = await fetch(`${API_URL}/api/version`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.version && CURRENT_VERSION && data.version !== CURRENT_VERSION) {
+      store.setUpdateAvailable(true);
+    }
+    // Save current version on first load
+    if (!CURRENT_VERSION && data.version) {
+      localStorage.setItem("meowzik_version", data.version);
+    }
+  } catch {
+    // Silently ignore version check failures
+  }
+}
 
 export const useRoomStore = create<RoomStore>((set, get) => ({
   roomCode: null,
@@ -80,6 +120,25 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   ws: null,
   isConnected: false,
   reconnectAttempts: 0,
+  toasts: [],
+  updateAvailable: false,
+  audioServerStatus: "checking",
+
+  setAudioServerStatus: (status) => set({ audioServerStatus: status }),
+  setUpdateAvailable: (available) => set({ updateAvailable: available }),
+
+  addToast: (message, type = "success") => {
+    const id = Math.random().toString(36).substring(2, 9);
+    set(state => ({ toasts: [...state.toasts, { id, message, type }] }));
+    // Auto-remove after 4 seconds
+    setTimeout(() => {
+      set(state => ({ toasts: state.toasts.filter(t => t.id !== id) }));
+    }, 4000);
+  },
+
+  removeToast: (id) => {
+    set(state => ({ toasts: state.toasts.filter(t => t.id !== id) }));
+  },
 
   setRoomCode: (code) => set({ roomCode: code }),
 
@@ -89,7 +148,6 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     
     set({ roomCode: code });
     
-    const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8788';
     const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
     const wsHost = API_URL.replace('http://', '').replace('https://', '');
     const wsUrl = `${wsProtocol}//${wsHost}/api/ws/${code}?userId=${get().userId}`;
@@ -101,6 +159,14 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       
       // Send initial visibility state
       ws.send(JSON.stringify({ type: "STATUS_UPDATE", status: document.hidden ? "inactive" : "active" }));
+
+      // Start heartbeat — send every 20 seconds to keep lastSeen fresh
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      heartbeatInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "HEARTBEAT" }));
+        }
+      }, 20_000);
     };
 
     ws.onmessage = (event) => {
@@ -114,6 +180,10 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
     ws.onclose = () => {
       set({ isConnected: false, ws: null });
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
       
       // Auto reconnect with backoff
       const attempts = get().reconnectAttempts;
@@ -141,6 +211,9 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       };
       document.addEventListener("visibilitychange", visibilityHandler);
     }
+
+    // Check for version updates
+    checkForUpdates(get());
   },
 
   disconnect: () => {
@@ -150,6 +223,10 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       ws.close();
     }
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
     if (visibilityHandler) {
       document.removeEventListener("visibilitychange", visibilityHandler);
       visibilityHandler = null;
@@ -200,6 +277,12 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
           memberCount: message.members.length,
           myRole: message.members.find((m: Member) => m.userId === get().userId)?.role || get().myRole
         });
+        break;
+      case "QUEUE_ADD_SUCCESS":
+        get().addToast(`Added "${message.trackTitle}" to queue`, "success");
+        break;
+      case "QUEUE_DUPLICATE":
+        get().addToast(`"${message.trackTitle}" is already in the queue`, "error");
         break;
     }
   },

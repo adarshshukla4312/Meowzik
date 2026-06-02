@@ -1,27 +1,34 @@
 /**
- * Meamie Worker — Edge-native entry point
+ * Meowzik Worker — Edge-native entry point
  *
  * Routes:
  *   GET  /api/search?q=<query>      → Piped search proxy
- *   GET  /api/stream/:videoId       → Piped stream extraction
+ *   GET  /api/stream/:videoId       → Piped stream metadata extraction
+ *   GET  /api/audio/:videoId        → Audio proxy (streams audio bytes with CORS)
  *   POST /api/room                  → Create a new room
  *   GET  /api/room/:code            → Check if a room exists
  *   GET  /api/ws/:roomCode          → WebSocket upgrade → Durable Object
+ *   GET  /api/version               → Current deployment version
  *
  * The RoomEngine Durable Object is re-exported from room-engine.ts
  */
 
-import { handleSearch, handleStream, refreshPipedInstances } from "./piped-rotator";
+import { handleSearch, handleStream, handleAudioProxy, refreshPipedInstances } from "./piped-rotator";
 
 // Re-export the Durable Object class so Wrangler can find it
 export { RoomEngine } from "./room-engine";
+
+// ─── Deployment Version ─────────────────────────────────────────────
+// Updated on each deploy. Frontend polls this to detect new versions.
+const DEPLOY_VERSION = "2025-05-27T00:00:00Z";
 
 // ─── CORS Helper ────────────────────────────────────────────────────
 function corsHeaders(): HeadersInit {
 	return {
 		"Access-Control-Allow-Origin": "*",
 		"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-		"Access-Control-Allow-Headers": "Content-Type, Upgrade",
+		"Access-Control-Allow-Headers": "Content-Type, Upgrade, Range",
+		"Access-Control-Expose-Headers": "Content-Range, Content-Length, Accept-Ranges",
 	};
 }
 
@@ -51,16 +58,28 @@ export default {
 		}
 
 		// ── API Routes ──────────────────────────────────────────────
+
+		// Version check endpoint
+		if (path === "/api/version" && request.method === "GET") {
+			return corsResponse({ version: DEPLOY_VERSION });
+		}
+
 		// Search for music via Piped
 		if (path === "/api/search" && request.method === "GET") {
 			const query = url.searchParams.get("q") || "";
 			return handleSearch(query, env);
 		}
 
-		// Extract ad-free stream URL from Piped
+		// Extract stream metadata from Piped
 		if (path.startsWith("/api/stream/") && request.method === "GET") {
 			const videoId = path.split("/api/stream/")[1];
 			return handleStream(videoId, env);
+		}
+
+		// Audio proxy — streams audio bytes through worker with CORS
+		if (path.startsWith("/api/audio/") && request.method === "GET") {
+			const videoId = path.split("/api/audio/")[1];
+			return handleAudioProxy(videoId, request, env);
 		}
 
 		// Create a new room
@@ -102,7 +121,7 @@ export default {
 		}
 
 		// ── Default ─────────────────────────────────────────────────
-		return new Response("Meamie API v1.0", {
+		return new Response("Meowzik API v1.1", {
 			headers: { "Content-Type": "text/plain", ...corsHeaders() },
 		});
 	},

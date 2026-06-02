@@ -1,15 +1,23 @@
 @import "tailwindcss";
 
-/* Define Meamie's Custom Design System (Uber-inspired) */
+/* Define Meowzik's Custom Design System (Uber-inspired) */
 @theme {
-  --color-meowzik-bg: #ffffff;      /* Canvas */
-  --color-meowzik-surface: #efefef; /* Canvas Soft */
-  --color-meowzik-surface-dark: #f3f3f3; /* Canvas Softer */
-  --color-meowzik-accent: #000000;  /* Primary/Ink */
-  --color-meowzik-accent-hover: #282828; /* Black Elevated */
-  --color-meowzik-text: #000000;    /* Ink */
-  --color-meowzik-text-inverse: #ffffff; /* On Dark */
-  --color-meowzik-muted: #5e5e5e;   /* Body */
+  --color-meowzik-bg: #ffffff;
+  /* Canvas */
+  --color-meowzik-surface: #efefef;
+  /* Canvas Soft */
+  --color-meowzik-surface-dark: #f3f3f3;
+  /* Canvas Softer */
+  --color-meowzik-accent: #000000;
+  /* Primary/Ink */
+  --color-meowzik-accent-hover: #282828;
+  /* Black Elevated */
+  --color-meowzik-text: #000000;
+  /* Ink */
+  --color-meowzik-text-inverse: #ffffff;
+  /* On Dark */
+  --color-meowzik-muted: #5e5e5e;
+  /* Body */
   --font-sans: "Inter", system-ui, Helvetica Neue, Arial, sans-serif;
   --font-display: "Inter", system-ui, Helvetica Neue, Arial, sans-serif;
 }
@@ -29,13 +37,16 @@
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--color-meowzik-surface);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-meowzik-muted);
 }
@@ -78,4 +89,44 @@
 .slider-progress::-moz-range-thumb:hover {
   transform: scale(1.15);
   box-shadow: 0 0 0 2px var(--color-meowzik-bg);
+}
+
+/* Toast slide-up animation */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.25s ease-out;
+}
+
+/* Audio Server Status Animations */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.status-dot-pulse {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes fade-out-text {
+  0% { max-width: 200px; opacity: 1; margin-left: 0.5rem; }
+  80% { max-width: 200px; opacity: 1; margin-left: 0.5rem; }
+  100% { max-width: 0; opacity: 0; margin-left: 0; }
+}
+
+.status-online-text {
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  animation: fade-out-text 3s forwards;
 }
